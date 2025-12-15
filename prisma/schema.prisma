@@ -1,0 +1,248 @@
+// MandarinMind - Chinese Learning Platform Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USER & AUTHENTICATION ====================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  username      String   @unique
+  passwordHash  String
+  role          Role     @default(USER)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  userProgress  UserProgress?
+  reviews       Review[]
+  failedWords   FailedWord[]
+  achievements  UserAchievement[]
+  streaks       Streak[]
+
+  @@map("users")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ==================== VOCABULARY ====================
+
+model Vocabulary {
+  id              String   @id @default(cuid())
+  chinese         String   @unique
+  pinyin          String
+  pinyinTone      String   // Pinyin with tone marks (e.g., "nǐ hǎo")
+  englishMeaning  String
+  synonyms        String[]
+  relatedWords    String[]
+  audioUrl        String?
+  hskLevel        Int?     // HSK 1-9
+  difficulty      Difficulty @default(BEGINNER)
+  usageFrequency  Int      @default(0)
+  exampleSentences ExampleSentence[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  reviews         Review[]
+  failedWords     FailedWord[]
+  lessonWords     LessonWord[]
+
+  @@map("vocabulary")
+}
+
+enum Difficulty {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+model ExampleSentence {
+  id            String   @id @default(cuid())
+  vocabularyId  String
+  chinese       String
+  pinyin        String
+  english       String
+  audioUrl      String?
+  createdAt     DateTime @default(now())
+
+  vocabulary    Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@map("example_sentences")
+}
+
+// ==================== LESSONS & PACKS ====================
+
+model Lesson {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  packId      String
+  orderIndex  Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pack        WordPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  words       LessonWord[]
+
+  @@map("lessons")
+}
+
+model WordPack {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  category    PackCategory
+  hskLevel    Int?
+  orderIndex  Int
+  isLocked    Boolean  @default(false)
+  unlockLevel Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lessons     Lesson[]
+
+  @@map("word_packs")
+}
+
+enum PackCategory {
+  HSK
+  DAILY_CONVERSATION
+  TRAVEL
+  FOOD_CULTURE
+  SLANG
+  BUSINESS
+  CUSTOM
+}
+
+model LessonWord {
+  id           String   @id @default(cuid())
+  lessonId     String
+  vocabularyId String
+  orderIndex   Int
+
+  lesson       Lesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  vocabulary   Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, vocabularyId])
+  @@map("lesson_words")
+}
+
+// ==================== SRS & REVIEWS ====================
+
+model Review {
+  id              String   @id @default(cuid())
+  userId          String
+  vocabularyId    String
+  srsStage        Int      @default(0) // 0 → 1 → 2 → 3 → 4 → 5 (burned)
+  correctCount    Int      @default(0)
+  incorrectCount  Int      @default(0)
+  lastReviewedAt  DateTime @default(now())
+  nextReviewAt    DateTime
+  intervalDays    Int      @default(1)
+  easeFactor      Float    @default(2.5)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vocabulary      Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vocabularyId])
+  @@map("reviews")
+}
+
+model FailedWord {
+  id              String   @id @default(cuid())
+  userId          String
+  vocabularyId    String
+  attemptCount    Int      @default(1)
+  lastFailedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vocabulary      Vocabulary @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, vocabularyId])
+  @@map("failed_words")
+}
+
+// ==================== USER PROGRESS ====================
+
+model UserProgress {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  level           Int      @default(1)
+  xp              Int      @default(0)
+  totalWords      Int      @default(0)
+  masteredWords   Int      @default(0)
+  currentStreak   Int      @default(0)
+  longestStreak   Int      @default(0)
+  lastActivityAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_progress")
+}
+
+model Streak {
+  id          String   @id @default(cuid())
+  userId      String
+  date        DateTime @db.Date
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@map("streaks")
+}
+
+// ==================== ACHIEVEMENTS ====================
+
+model Achievement {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String
+  iconUrl     String?
+  category    AchievementCategory
+  requirement Int      // e.g., 20 words, 7 days
+  createdAt   DateTime @default(now())
+
+  userAchievements UserAchievement[]
+
+  @@map("achievements")
+}
+
+enum AchievementCategory {
+  WORDS_LEARNED
+  STREAK
+  MASTERED_WORDS
+  PERFECT_QUIZ
+  HSK_COMPLETION
+  SPECIAL
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid())
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@map("user_achievements")
+}
